@@ -12,13 +12,11 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
-    ],
+    rules: {
+      "quotes": ["error", "double"], // 強制使用雙引號
+      "no-unused-vars": ["warn", , { "varsIgnorePattern": "^EObjectFit$" }], // 警告沒使用的變數
+      "semi": ["error", "always"], // 結尾補上分號
+    },
   },
 ];
 

@@ -43,3 +43,5 @@ next-env.d.ts
 api/weights
 api/traced_model.pt
 traced_model.pt
+
+api/upload
