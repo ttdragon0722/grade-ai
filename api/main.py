@@ -1,21 +1,27 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File,Request, Form
+from fastapi import FastAPI, UploadFile, File,Request, Form,Query
 import time
 from pathlib import Path
 import shutil
 import json
 import os
 from datetime import datetime
+import mimetypes
+
 # 從你的自訂模組中匯入初始化函數
-# from model_loader import initialize_model
-# from detect import detect_images
+# ai
+from model_loader import initialize_model
+from detect import detect_images,detect_images_v2
+
+
 from schemas import *
 from fastapi import FastAPI, Depends, HTTPException, status, Response
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text  # 匯入 text 模組
 from sqlalchemy.exc import SQLAlchemyError
 from sql.database import get_db
-from sql.models import Teacher,Class, Exam
+from sql.models import Teacher,Class, Exam, AiResult
 from security import get_password_hash, verify_password, create_session_token, verify_session_token
 from uuid import uuid4
 from schemas import LoginRequest, TeacherPublic # 從 schemas.py 匯入新的模型
@@ -33,13 +39,13 @@ async def lifespan(app: FastAPI):
     
     # 載入並暖機模型
     weights_file = Path("weights/yolobest.pt")
-    # model_data = initialize_model(str(weights_file))
+    model_data = initialize_model(str(weights_file))
     
-    # # 將模型和相關資料儲存到 app_state
-    # app_state["model"] = model_data["model"]
-    # app_state["device"] = model_data["device"]
-    # app_state["half"] = model_data["half"]
-    # app_state["imgsz"] = model_data["imgsz"]
+    # 將模型和相關資料儲存到 app_state
+    app_state["model"] = model_data["model"]
+    app_state["device"] = model_data["device"]
+    app_state["half"] = model_data["half"]
+    app_state["imgsz"] = model_data["imgsz"]
     
     yield
     
@@ -345,7 +351,10 @@ async def add_test(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 資料無效")
 
         new_test_id = str(uuid4())
-        correct_answer_json = json.dumps(test_data.correct_answer)
+        # 將新的 correct_answer 字典結構轉換為 JSON 字串
+        correct_answer_json = json.dumps({
+            q_num: item.model_dump() for q_num, item in test_data.correct_answer.items()
+        })
         # 獲取當前時間戳
         created_at = datetime.now()
 
@@ -555,19 +564,24 @@ async def get_students_by_class(class_id: str, exam_id: str, request: Request, d
 
         # 獲取該班級的所有學生及其上傳狀態
         sql_query = text("""
-            SELECT
-                s.id,
-                s.student_id,
-                s.name,
-                s.class_id,
-                s.class,
-                COUNT(ep.id) AS uploaded_pages_count
-            FROM students s
-            LEFT JOIN exam_pages ep ON s.id = ep.student_id AND ep.exam_id = :exam_id
-            WHERE s.class_id = :class_id
-            GROUP BY s.id, s.student_id, s.name, s.class_id, s.class
-            ORDER BY s.student_id ASC
-        """)
+    SELECT
+        s.id,
+        s.student_id,
+        s.name,
+        s.class_id,
+        s.class,
+        COUNT(DISTINCT ep.id) AS uploaded_pages_count,
+        COUNT(DISTINCT ar.id) AS ai_result_count
+    FROM students s
+    LEFT JOIN exam_pages ep 
+        ON s.id = ep.student_id AND ep.exam_id = :exam_id
+    LEFT JOIN ai_result ar 
+        ON ar.exam_page_id = ep.id  -- 這裡用 exam_pages.id 連到 ai_result
+    WHERE s.class_id = :class_id
+    GROUP BY s.id, s.student_id, s.name, s.class_id, s.class
+    ORDER BY s.student_id ASC
+""")
+
         result = db.execute(sql_query, {"class_id": class_id, "exam_id": exam_id}).fetchall()
         
         # 將資料轉換為 Pydantic 模型列表
@@ -635,3 +649,388 @@ async def upload_exam_photos(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"資料庫錯誤: {e}")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"上傳錯誤: {e}")
+    
+@app.get("/photo/{id}", response_class=FileResponse)
+async def get_photo_by_id(id: str, db: Session = Depends(get_db)):
+    """
+    根據 exam_pages 的 ID 獲取並回傳圖片檔案。
+    """
+    try:
+        # 使用 SQL 查詢來尋找 photo_path
+        sql_query = text("SELECT photo_path FROM exam_pages WHERE id = :id")
+        result = db.execute(sql_query, {"id": id}).fetchone()
+
+        if not result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到對應的圖片。")
+
+        photo_path = result.photo_path
+
+        # 檢查檔案是否存在
+        if not os.path.exists(photo_path):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="圖片檔案不存在於伺服器。")
+
+        # 回傳圖片檔案
+        return FileResponse(photo_path)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/data/{file_path:path}")
+async def serve_image(file_path: str):
+    """
+    根據檔案路徑回傳圖片檔案。
+    """
+    DATA_DIR = Path("./data")
+    full_path = DATA_DIR / file_path
+
+    # 檢查路徑是否在指定資料夾內，以防止路徑遍歷攻擊
+    try:
+        resolved_path = full_path.resolve()
+        if not resolved_path.is_relative_to(DATA_DIR.resolve()):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="禁止存取此路徑。")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="路徑解析失敗。")
+
+    # 檢查檔案是否存在
+    if not resolved_path.exists() or not resolved_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到檔案。")
+
+    # 猜測檔案類型，並回傳檔案
+    media_type, _ = mimetypes.guess_type(resolved_path)
+    return FileResponse(resolved_path, media_type=media_type)
+
+
+
+@app.get("/api/get_photos/{exam_id}/{student_id}", response_model=List[str])
+async def get_student_photos(exam_id: str, student_id: str, db: Session = Depends(get_db)):
+    """
+    根據測驗ID和學生ID，回傳該學生已上傳的所有圖片ID，並依頁碼排序。
+    """
+    try:
+        # 查詢 exam_pages 表格，找出符合 exam_id 和 student_id 的所有圖片，並依 page_number 排序
+        sql_query = text("""
+            SELECT id
+            FROM exam_pages
+            WHERE exam_id = :exam_id AND student_id = :student_id
+            ORDER BY page_number ASC
+        """)
+        
+        result = db.execute(sql_query, {"exam_id": exam_id, "student_id": student_id}).fetchall()
+        
+        # 將結果轉換為 ID 的列表
+        photo_ids = [row.id for row in result]
+        
+        if not photo_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到該學生在本次測驗中上傳的任何圖片。")
+        
+        return photo_ids
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# 新增 GET API 端點來獲取特定測驗的學生和照片列表
+@app.get("/get_exam_gallery/{exam_id}", response_model=List[StudentWithPhotos])
+async def get_exam_gallery(exam_id: str, request: Request, db: Session = Depends(get_db)):
+    """
+    根據測驗 ID 獲取所有相關學生的上傳照片列表。
+    """
+    try:
+        # 從請求的 Cookie 中取得 Session Token
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未驗證")
+
+        # 驗證 Session Token 是否有效
+        session_data = verify_session_token(session_token)
+        if not session_data:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 過期或無效")
+        
+        teacher_id = session_data.get("user_id")
+        if not teacher_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 資料無效")
+        
+        # 1. 首先，驗證老師對此測驗有存取權限
+        exam_query = text("SELECT id FROM exams WHERE id = :exam_id AND teacher_id = :teacher_id LIMIT 1")
+        exam_result = db.execute(exam_query, {"exam_id": exam_id, "teacher_id": teacher_id}).fetchone()
+        if not exam_result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="測驗不存在或您無權存取。")
+        
+        # 2. 從 exam_pages 中獲取與該測驗相關的所有照片和學生 ID
+        pages_query = text("SELECT student_id, id FROM exam_pages WHERE exam_id = :exam_id")
+        pages_result = db.execute(pages_query, {"exam_id": exam_id}).fetchall()
+        
+        if not pages_result:
+            return []  # 如果沒有照片，直接返回空列表
+
+        # 3. 創建一個字典，將照片按學生分組
+        student_photos: Dict[str, List[str]] = {}
+        unique_student_ids = set()
+        for row in pages_result:
+            student_id = row.student_id
+            photo_id = row.id
+            unique_student_ids.add(student_id)
+            if student_id not in student_photos:
+                student_photos[student_id] = []
+            student_photos[student_id].append(photo_id)
+
+        # 4. 根據學生 ID 列表從 students 表中獲取學生資訊
+        students_query = text("SELECT id, student_id, name, class AS class_name FROM students WHERE id IN :student_id")
+        students_result = db.execute(students_query, {"student_id": list(unique_student_ids)}).fetchall()
+        
+        # 5. 組合最終結果
+        final_gallery: List[StudentWithPhotos] = []
+        for student_row in students_result:
+            student_id = student_row.id
+            final_gallery.append(
+                StudentWithPhotos(
+                    id=student_row.id,
+                    student_id=student_row.student_id,
+                    name=student_row.name,
+                    class_name=student_row.class_name,
+                    photos=student_photos.get(student_id, [])
+                )
+            )
+
+        return final_gallery
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+@app.get("/ai/detect_exam/{exam_id}")
+async def detect_exam(
+    exam_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    mode: str = Query("single", description="模式: single (預設) / all")
+):
+    """
+    根據測驗 ID 獲取所有相關的測驗圖片路徑，並進行 AI 批改，
+    最後將結果儲存到資料庫中。
+    
+    Query parameter:
+    - mode=single (預設)：已生成的圖片不再重做
+    - mode=all：全部圖片都重做
+    """
+    try:
+        # 驗證 session
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未驗證")
+
+        session_data = verify_session_token(session_token)
+        if not session_data:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 過期或無效")
+        
+        teacher_id = session_data.get("user_id")
+        if not teacher_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 資料無效")
+
+        # 取 exams 的 id + correct_answer
+        exam_query = text("""
+            SELECT id, correct_answer 
+            FROM exams 
+            WHERE id = :exam_id AND teacher_id = :teacher_id 
+            LIMIT 1
+        """)
+        exam_result = db.execute(
+            exam_query, 
+            {"exam_id": exam_id, "teacher_id": teacher_id}
+        ).fetchone()
+
+        if not exam_result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="測驗不存在或您無權存取。")
+
+        correct_answer = {}
+        if exam_result.correct_answer:
+            try:
+                correct_answer = json.loads(exam_result.correct_answer)
+            except Exception:
+                pass
+
+        # 獲取與該測驗 ID 相關的所有圖片路徑和 exam_page_id
+        sql_query = text("""
+            SELECT id, photo_path 
+            FROM exam_pages 
+            WHERE exam_id = :exam_id 
+            ORDER BY page_number ASC
+        """)
+        result = db.execute(sql_query, {"exam_id": exam_id}).fetchall()
+        
+        photo_paths = []
+        page_ids = []
+
+        # 根據模式決定要處理哪些圖片
+        for row in result:
+            page_id = str(row.id)
+            photo_path = row.photo_path
+
+            if mode == "single":
+                # single 模式下，先檢查 ai_result 是否已經存在
+                existing_record = db.execute(
+                    text("SELECT id FROM ai_result WHERE exam_page_id = :page_id LIMIT 1"),
+                    {"page_id": page_id}
+                ).fetchone()
+                if existing_record:
+                    continue  # 已經生成過就跳過
+
+            # 將需要處理的圖片加入列表
+            photo_paths.append(photo_path)
+            page_ids.append(page_id)
+
+        if not photo_paths:
+            return {"message": "所有圖片已生成結果，無需重新批改。", "paths": [row.photo_path for row in result]}
+
+        print(f"Detecting images for paths: {photo_paths}")
+
+        # 呼叫 AI 偵測並批改
+        ai_results = detect_images_v2(
+            photo_paths,
+            page_ids,
+            app_state["model"],
+            app_state["device"],
+            app_state["half"],
+            app_state["imgsz"],
+            exam_id,
+            correct_answer or {}
+        )
+
+        # 將結果儲存到資料庫
+        for result in ai_results:
+            page_id = result['exam_page_id']
+            grading_result = result['grading_results']
+            save_paths = [str(p) for p in result['save_paths']]  # WindowsPath -> str
+
+            # 檢查是否已存在
+            existing_record = db.execute(
+                text("SELECT id FROM ai_result WHERE exam_page_id = :page_id LIMIT 1"),
+                {"page_id": page_id}
+            ).fetchone()
+
+            params = {
+                "result": json.dumps(grading_result['details']),
+                "score": grading_result['total_score'],
+                "save_path": json.dumps(save_paths),
+                "updated_at": datetime.now()
+            }
+
+            if existing_record:
+                db.execute(
+                    text("""
+                        UPDATE ai_result
+                        SET result = :result, score = :score, save_path = :save_path, updated_at = :updated_at
+                        WHERE id = :id
+                    """),
+                    {**params, "id": str(existing_record.id)}
+                )
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO ai_result (id, exam_page_id, result, score, save_path, created_at, updated_at)
+                        VALUES (:id, :exam_page_id, :result, :score, :save_path, :created_at, :updated_at)
+                    """),
+                    {
+                        **params,
+                        "id": str(uuid4()),
+                        "exam_page_id": page_id,
+                        "created_at": datetime.now()
+                    }
+                )
+
+        db.commit()
+        return {"message": "批改完成，結果已儲存到資料庫。", "paths": photo_paths}
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"內部伺服器錯誤：{str(e)}")
+#----------------------------------------
+# 取得 AI 批改結果並進行資料處理
+#----------------------------------------
+@app.get("/ai/get_result/{exam_id}")
+async def get_ai_results(
+    exam_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    獲取指定測驗的所有 AI 批改結果，並按學生分組加總分數。
+    """
+    try:
+        # 從請求的 Cookie 中取得 Session Token
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未驗證")
+
+        # 驗證 Session Token 是否有效
+        session_data = verify_session_token(session_token)
+        if not session_data:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 過期或無效")
+        
+        teacher_id = session_data.get("user_id")
+        if not teacher_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session 資料無效")
+
+        # 查詢所有相關資料
+        sql_query = text("""
+            SELECT
+                ar.id AS ai_result_id,
+                ar.score,
+                ar.save_path,
+                ep.student_id,
+                ep.page_number,
+                s.name AS student_name,
+                s.student_id AS student_student_id,
+                c.class_name
+            FROM ai_result AS ar
+            JOIN exam_pages AS ep ON ar.exam_page_id = ep.id
+            JOIN students AS s ON ep.student_id = s.id
+            JOIN classes AS c ON s.class_id = c.id
+            WHERE ep.exam_id = :exam_id
+            ORDER BY ep.page_number ASC
+        """)
+
+        db_results = db.execute(sql_query, {"exam_id": exam_id}).fetchall()
+
+        if not db_results:
+            return []
+
+        # 將結果整理成字典，以 student_id 為鍵
+        student_results = {}
+        for row in db_results:
+            student_id = str(row.student_id)
+            if student_id not in student_results:
+                student_results[student_id] = {
+                    "id": student_id,
+                    "student_id": row.student_student_id,
+                    "name": row.student_name,
+                    "class_name": row.class_name,
+                    "score": 0,
+                    "result_images": []
+                }
+            
+            # 將分數加總
+            student_results[student_id]["score"] += row.score
+            
+            # 建立圖片資料
+            save_path_list = json.loads(row.save_path) if row.save_path else []
+            student_results[student_id]["result_images"].append({
+                "ai_result_id": str(row.ai_result_id),
+                "save_paths": save_path_list
+            })
+
+        # 將字典轉換回列表
+        final_results = list(student_results.values())
+
+        return final_results
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"內部伺服器錯誤：{str(e)}")

@@ -1,5 +1,6 @@
 "use client"
 import React, { useState } from "react";
+import PrevButton from "../_components/prevButton";
 
 interface FormData {
     subject: string;
@@ -39,7 +40,7 @@ const CreatePanelForm: React.FC = () => {
             const createdClass = await res.json();
             console.log("建立成功:", createdClass);
             if (res.ok) {
-                
+
                 window.location.href = "/dashboard";
             } else {
                 // 登入失敗，後端會回傳錯誤訊息
@@ -57,7 +58,11 @@ const CreatePanelForm: React.FC = () => {
 
     return (
         <>
-            <h2 className="mt-5 text-lg font-bold text-neutral-50 mb-4">建立班級</h2>
+            <div className='flex gap-5 items-center mb-3'>
+                <PrevButton />
+                <h2 className="mt-5 text-lg font-bold text-neutral-50 mb-4">建立班級</h2>
+            </div>
+
             <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
                 {/* 科目 */}
                 <div className="flex flex-col">

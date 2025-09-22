@@ -25,12 +25,18 @@ class CreateClassRequest(BaseModel):
     subject: str
     class_name: str
 
-# 定義 Pydantic 模型來接收前端的 JSON 酬載
+# 新增一個 Pydantic 模型來處理每個題目的答案和分數
+class CorrectAnswerItem(BaseModel):
+    answer: str = Field(..., description="The correct answer for the question.")
+    score: int = Field(..., ge=0, description="The score for the question.")
+
+# 更新 TestCreate 模型，使其 correct_answer 欄位接受字典，
+# 且字典的值為我們剛剛建立的 CorrectAnswerItem 模型
 class TestCreate(BaseModel):
     class_id: str
     exam_name: str
     total_pages: int
-    correct_answer: Dict[str, str]
+    correct_answer: dict[str, CorrectAnswerItem]
 
 
 # --- Pydantic 資料模型 ---
@@ -64,4 +70,14 @@ class StudentTestResponse(StudentResponse):
     定義從 API 回傳的學生資料結構。
     """
     uploaded_pages_count: int
+    ai_result_count:int
+    
+
+# 定義 Pydantic 模型來處理輸出的資料格式
+class StudentWithPhotos(BaseModel):
+    id: str  # students table id
+    student_id: str  # students table students_id
+    name: str  # students table name
+    class_name: str  # students table class
+    photos: List[str]  # photo_id list from exam_pages table
     

@@ -6,7 +6,7 @@ const Header = () => {
     const router = useRouter();
 
     return (
-        <header className="border-border flex h-16 items-center gap-4 border-b bg-white px-4 dark:bg-neutral-800">
+        <header className="border-border flex h-16 items-center gap-4 border-b px-4 bg-neutral-800">
             {/* 左側區塊 */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push("/dashboard")}>
                 {/* 標題 */}

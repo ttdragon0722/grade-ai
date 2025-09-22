@@ -1,7 +1,7 @@
 # File: models.py
-
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List, Dict
+from datetime import datetime
 import uuid
 
 # Teachers (老師)
@@ -56,4 +56,17 @@ class ExamPage:
     page_number: int
     photo_path: str
     ai_result: dict
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    
+# Ai_Results (AI 批改結果)
+@dataclass
+class AiResult:
+    """Represents the AI grading results for a single exam page."""
+    __tablename__ = 'ai_result'
+    exam_page_id: str
+    result: Dict
+    score: int
+    save_path: List[str] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))

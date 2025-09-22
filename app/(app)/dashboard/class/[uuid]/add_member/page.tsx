@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { usePathname } from 'next/navigation';
+import PrevButton from '../../../_components/prevButton';
 
 /**
  * @interface
@@ -18,7 +19,7 @@ const AddStudentPage: React.FC = () => {
     // 取得 URL 中的班級 ID
     const pathname = usePathname();
     const classId = pathname ? pathname.split('/')[pathname.split('/').length - 2] : null;
-    
+
 
     // 狀態管理
     const [existingStudents, setExistingStudents] = useState<Student[]>([]);
@@ -42,7 +43,7 @@ const AddStudentPage: React.FC = () => {
                 if (!response.ok) {
                     throw new Error("無法載入現有學生名單。");
                 }
-                
+
                 const data = await response.json();
                 if (response.ok) {
                     setExistingStudents(data); // 直接使用回傳的陣列來更新狀態
@@ -100,9 +101,9 @@ const AddStudentPage: React.FC = () => {
         setLoading(true);
         setUploadError(null);
         setUploadSuccess(null);
-        
+
         // 檢查是否有空欄位
-        const hasEmptyFields = studentsToAdd.some(student => 
+        const hasEmptyFields = studentsToAdd.some(student =>
             !student.student_id || !student.name || !student.class
         );
         if (hasEmptyFields) {
@@ -145,7 +146,11 @@ const AddStudentPage: React.FC = () => {
 
     return (
         <div className="p-4 max-w-4xl mx-auto">
-            <h1 className="text-3xl font-bold mb-6 text-neutral-50">新增同學到班級</h1>
+            <div className='flex gap-5 items-center mb-3'>
+                <PrevButton />
+                <h1 className="text-3xl font-bold mb-6 text-neutral-50">新增同學到班級</h1>
+            </div>
+
 
             <div className="bg-neutral-800 rounded-lg p-6 shadow-md border border-neutral-700 mb-8">
                 <h2 className="text-xl font-semibold mb-4 text-neutral-50">目前班級同學</h2>
@@ -167,7 +172,7 @@ const AddStudentPage: React.FC = () => {
                     </ul>
                 )}
             </div>
-            
+
             <div className="flex justify-between items-center mt-4">
                 <button
                     onClick={handleAddStudentRow}

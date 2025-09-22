@@ -10,7 +10,7 @@ const ContainerMobile = ({ children, className }: ContainerMobileProps) => {
     return (
         <div
             className={clsx(
-                "mx-auto px-2 sm:px-6 md:px-8 max-w-full sm:max-w-md md:max-w-2xl relative",
+                "mx-auto px-2 sm:px-6 md:px-8 max-w-full md:max-w-2xl relative py-2",
                 className
             )}
         >

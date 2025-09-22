@@ -5,10 +5,15 @@ const nextConfig: NextConfig = {
 		return [
 			{
 				source: "/api/:path*",
-				destination:
-					process.env.NODE_ENV === "development"
-						? "http://127.0.0.1:8000/:path*"
-						: "http://127.0.0.1:8000/:path*",
+				destination:"http://127.0.0.1:8000/:path*"
+			},
+			{
+				source: "/data/:path*",
+				destination:"http://127.0.0.1:8000/data/:path*"
+			},
+			{
+				source: "/photo/:path*",
+				destination:"http://127.0.0.1:8000/photo/:path*"
 			},
 			{
 				source: "/docs",

@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import clsx from 'clsx';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Button from '../../_components/button';
+import { useExam } from '../_context/ExamContext';
 
 // 使用 window.location.pathname 來獲取路徑
 const usePathname = () => {
@@ -36,7 +37,8 @@ interface Student {
     name: string;
     class_id: string;
     class: string;
-    uploaded_pages_count: number
+    uploaded_pages_count: number;
+    ai_result_count: number
 }
 
 /**
@@ -218,35 +220,29 @@ const UploadModal: React.FC<{ isOpen: boolean; onClose: () => void; data: Upload
 };
 
 const ExamPage: React.FC = () => {
-    const params = useParams();
-    const examId = params.uuid;
+    // 使用 useExam 勾子獲取測驗資訊
+    const { exam, examId, loading: isExamLoading, error: examError } = useExam();
+    const router = useRouter();
 
-    const [exam, setExam] = useState<Exam | null>(null);
+
+    // 學生名單的獨立狀態
     const [students, setStudents] = useState<Student[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+    const [isStudentsLoading, setIsStudentsLoading] = useState<boolean>(false);
+    const [studentsError, setStudentsError] = useState<string | null>(null);
+
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
     const [uploadData, setUploadData] = useState<UploadData | null>(null);
 
     useEffect(() => {
-        const fetchExamAndStudents = async () => {
-            if (!examId) {
-                setError("測驗 ID 無效。");
-                setLoading(false);
-                return;
-            }
+        const fetchStudents = async () => {
+            // 只有在測驗資訊載入完成且沒有錯誤時才獲取學生名單
+            if (!exam) return;
+            setIsStudentsLoading(true);
+            setStudentsError(null);
 
             try {
-                // 步驟 1: 獲取測驗資訊
-                const examResponse = await fetch(`/api/get_exam/${examId}`);
-                if (!examResponse.ok) {
-                    throw new Error("無法獲取測驗資訊。");
-                }
-                const examData: Exam = await examResponse.json();
-                setExam(examData);
-
                 // 步驟 2: 使用 class_id 獲取學生名單
-                const studentsResponse = await fetch(`/api/get_students_test_data/${examData.class_id}/${examData.id}`);
+                const studentsResponse = await fetch(`/api/get_students_test_data/${exam.class_id}/${exam.id}`);
                 if (!studentsResponse.ok) {
                     throw new Error("無法獲取學生名單。");
                 }
@@ -255,20 +251,20 @@ const ExamPage: React.FC = () => {
 
             } catch (err: unknown) {
                 const errorMessage = (err as Error).message;
-                setError(errorMessage);
+                setStudentsError(errorMessage);
                 console.error("API 錯誤:", err);
             } finally {
-                setLoading(false);
+                setIsStudentsLoading(false);
             }
         };
 
-        fetchExamAndStudents();
-    }, [examId]);
+        fetchStudents();
+    }, [exam]); // 依賴於 exam，當 exam 載入完成時觸發
 
     const handleUploadClick = (student: Student) => {
         if (exam) {
             setUploadData({
-                studentId: student.id, // 修正：使用資料庫的 UUID
+                studentId: student.id,
                 studentName: student.name,
                 examId: exam.id,
                 classId: exam.class_id,
@@ -279,60 +275,99 @@ const ExamPage: React.FC = () => {
         }
     };
 
+    const handleClick = async () => {
+        try {
+            const response = await fetch(`/api/ai/detect_exam/${examId}`, {
+                method: "GET",
+            });
+
+            if (!response.ok) {
+                throw new Error("API 呼叫失敗");
+            }
+
+            const data = await response.json();
+            console.log("AI 批改結果：", data);
+
+            // 導到 /answer 頁面
+            router.push(`/dashboard/exam/${examId}/answer`);
+        } catch (error) {
+            console.error(error);
+            alert("AI 批改失敗");
+        }
+    };
+
+
+
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setUploadData(null);
     };
 
-    if (loading) {
+    // 優先處理整體頁面載入和錯誤狀態
+    if (isExamLoading) {
         return <div className="p-2 text-center text-neutral-400">載入中...</div>;
     }
 
-    if (error) {
-        return <div className="p-2 text-center text-red-400">{error}</div>;
+    if (examError) {
+        return <div className="p-2 text-center text-red-400">{examError}</div>;
     }
 
     if (!exam) {
         return <div className="p-2 text-center text-red-400">找不到此測驗。</div>;
     }
 
+    // 當測驗資訊載入完成後，顯示頁面內容
     return (
         <div className="p-2 max-w-4xl mx-auto min-h-screen">
-            <h1 className="text-3xl font-bold mb-2">{exam.exam_name}</h1>
-            <p className="text-neutral-400 mb-6">Pages: {exam.total_pages}</p>
-
             <div className="bg-neutral-800 rounded-lg p-6 shadow-md border border-neutral-700">
                 <h2 className="text-xl font-semibold mb-4">學生名單</h2>
-                {students.length === 0 ? (
-                    <p className="text-neutral-400">此班級目前沒有學生。</p>
+                {isStudentsLoading ? (
+                    <div className="flex justify-center items-center py-10">
+                        <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="ml-4 text-neutral-400">載入學生名單中...</p>
+                    </div>
+                ) : studentsError ? (
+                    <p className="text-red-500">{studentsError}</p>
+                ) : students.length === 0 ? (
+                    <p className="text-neutral-400">此測驗目前沒有學生資料。</p>
                 ) : (
                     <ul className="space-y-3">
                         {students.map((student) => (
-                            <li key={student.id} className="bg-neutral-700 rounded-lg p-3 flex justify-between items-center">
-                                <div>
-                                    <div className="font-semibold">{student.name}
+                            <li
+                                key={student.id}
+                                className="bg-neutral-700 rounded-lg p-4 flex flex-row justify-between items-center gap-2"
+                            >
+                                {/* 左側：學生資訊 */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-semibold truncate">{student.name}</div>
+                                    <div className="flex flex-wrap gap-2 mt-1 text-sm">
                                         <span
-                                            className={
-                                                clsx(
-                                                    "ml-3 text-sm",
-                                                    student.uploaded_pages_count <= 0
-                                                        ? "text-red-500"
-                                                        : student.uploaded_pages_count >= exam.total_pages
-                                                            ? "text-green-500"
-                                                            : "text-orange-500"
-                                                )
-                                            }
+                                            className={clsx(
+                                                student.uploaded_pages_count <= 0
+                                                    ? "text-red-500"
+                                                    : student.uploaded_pages_count >= exam.total_pages
+                                                        ? "text-green-500"
+                                                        : "text-orange-500"
+                                            )}
                                         >
                                             {student.uploaded_pages_count <= 0
-                                                ? `尚未上傳 (0/ ${exam.total_pages})`
+                                                ? `尚未上傳 (0/${exam.total_pages})`
                                                 : `已經上傳 (${student.uploaded_pages_count}/${exam.total_pages})`}
                                         </span>
+                                        {student.ai_result_count > 0 && (
+                                            <span className="text-green-500">AI 已批改({student.ai_result_count})</span>
+                                        )}
                                     </div>
-                                    {student.student_id} ({student.class})
+                                    <p className="text-neutral-400 text-sm truncate mt-1">{student.student_id} ({student.class})</p>
                                 </div>
+
+                                {/* 右側：上傳按鈕 */}
                                 <button
                                     onClick={() => handleUploadClick(student)}
-                                    className="bg-green-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-green-700 transition-colors"
+                                    className="bg-green-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-green-700 transition-colors flex-shrink-0"
                                 >
                                     上傳
                                 </button>
@@ -342,7 +377,7 @@ const ExamPage: React.FC = () => {
                 )}
             </div>
             <div className="flex justify-center items-center mt-5">
-                <Button>使用AI匹改</Button>
+                <Button onClick={handleClick}>使用AI批改</Button>
             </div>
             <UploadModal isOpen={isModalOpen} onClose={handleCloseModal} data={uploadData} />
         </div>

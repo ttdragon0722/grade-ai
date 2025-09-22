@@ -45,3 +45,4 @@ api/traced_model.pt
 traced_model.pt
 
 api/upload
+api/data

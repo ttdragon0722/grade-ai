@@ -1,16 +1,19 @@
 "use client";
 
-import { useParams, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import PrevButton from '../../../_components/prevButton';
 
 /**
  * @typedef {Object} CorrectAnswer
  * @property {string} question_number - 題號，從1開始。
  * @property {string} answer - 正確答案，'a' | 'b' | 'c' | 'd'。
+ * @property {number} score - 該題的分數。
  */
 interface CorrectAnswer {
     question_number: string;
     answer: string;
+    score: number;
 }
 
 /**
@@ -29,6 +32,7 @@ interface ClassData {
 
 const AddTestPage = () => {
     // 從 URL 取得 class_id
+    // 取得 URL 中的班級 ID
     const pathname = usePathname();
     const classId = pathname ? pathname.split('/')[pathname.split('/').length - 2] : null;
 
@@ -38,7 +42,7 @@ const AddTestPage = () => {
 
     const [examName, setExamName] = useState<string>('');
     const [totalPages, setTotalPages] = useState<string>('');
-    const [correctAnswers, setCorrectAnswers] = useState<CorrectAnswer[]>([{ question_number: '1', answer: 'a' }]);
+    const [correctAnswers, setCorrectAnswers] = useState<CorrectAnswer[]>([{ question_number: '1', answer: 'a', score: 10 }]);
     const [formLoading, setFormLoading] = useState<boolean>(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -50,12 +54,20 @@ const AddTestPage = () => {
         ));
     };
 
+    // 處理分數的變更
+    const handleScoreChange = (questionNumber: string, value: string) => {
+        const score = parseInt(value, 10);
+        setCorrectAnswers(correctAnswers.map(ans =>
+            ans.question_number === questionNumber ? { ...ans, score: isNaN(score) ? 0 : score } : ans
+        ));
+    };
+
     // 處理新增題目
     const handleAddQuestion = () => {
         const nextNumber = correctAnswers.length > 0
             ? (parseInt(correctAnswers[correctAnswers.length - 1].question_number) + 1).toString()
             : '1';
-        setCorrectAnswers([...correctAnswers, { question_number: nextNumber, answer: 'a' }]);
+        setCorrectAnswers([...correctAnswers, { question_number: nextNumber, answer: 'a', score: 10 }]);
     };
 
     // 處理刪除題目
@@ -79,9 +91,9 @@ const AddTestPage = () => {
 
         try {
             // 將動態答案列表轉換為所需的 JSON 格式
-            const formattedAnswers: { [key: string]: string } = {};
+            const formattedAnswers: { [key: string]: { answer: string, score: number } } = {};
             correctAnswers.forEach(ans => {
-                formattedAnswers[ans.question_number] = ans.answer;
+                formattedAnswers[ans.question_number] = { answer: ans.answer, score: ans.score };
             });
 
             const newTestPayload = {
@@ -106,7 +118,7 @@ const AddTestPage = () => {
                 // 重置表單
                 setExamName('');
                 setTotalPages('');
-                setCorrectAnswers([{ question_number: '1', answer: 'a' }]);
+                setCorrectAnswers([{ question_number: '1', answer: 'a', score: 10 }]);
             } else {
                 const errorData = await response.json();
                 if (errorData.detail && Array.isArray(errorData.detail)) {
@@ -152,12 +164,14 @@ const AddTestPage = () => {
         fetchClassData();
     }, [classId]);
 
-
     return (
-        <div className="flex flex-col items-center p-4 min-h-screen">
+        <div className="flex flex-col items-center p-4 min-h-screen ">
             <div className="w-full max-w-2xl">
-                <h1 className="text-3xl font-bold text-neutral-50 mb-2">新增測驗</h1>
-                
+                <div className='flex gap-5 items-center mb-3'>
+                    <PrevButton />
+                    <h1 className="text-3xl font-bold text-neutral-50 mb-2">新增測驗</h1>
+                </div>
+
                 {/* 顯示課程資訊 */}
                 {classLoading ? (
                     <p className="text-neutral-400 mb-4">載入課程資訊...</p>
@@ -169,7 +183,7 @@ const AddTestPage = () => {
                     </p>
                 )}
 
-                <div className="bg-neutral-800 rounded-lg p-4 shadow-md border border-neutral-700">
+                <div className="bg-neutral-800 rounded-lg p-6 shadow-md border border-neutral-700">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         {/* 測驗名稱 */}
                         <div>
@@ -206,12 +220,12 @@ const AddTestPage = () => {
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <label className="text-sm font-medium text-neutral-300">
-                                    正確答案
+                                    正確答案與分數
                                 </label>
                                 <button
                                     type="button"
                                     onClick={handleAddQuestion}
-                                    className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                                    className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
                                 >
                                     + 新增題目
                                 </button>
@@ -221,7 +235,9 @@ const AddTestPage = () => {
                                     <div key={ans.question_number} className="flex items-center space-x-4 bg-neutral-700 p-4 rounded-md">
                                         <p className="text-neutral-300 font-semibold">{ans.question_number}.</p>
                                         <div className="flex-1">
+                                            <label htmlFor={`answer-${ans.question_number}`} className="sr-only">選擇答案</label>
                                             <select
+                                                id={`answer-${ans.question_number}`}
                                                 value={ans.answer}
                                                 onChange={(e) => handleAnswerChange(ans.question_number, e.target.value)}
                                                 className="w-full px-3 py-2 bg-neutral-800 text-neutral-50 rounded-md border border-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -231,6 +247,18 @@ const AddTestPage = () => {
                                                 <option value="c">c</option>
                                                 <option value="d">d</option>
                                             </select>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <label htmlFor={`score-${ans.question_number}`} className="text-neutral-300 whitespace-nowrap">分數:</label>
+                                            <input
+                                                id={`score-${ans.question_number}`}
+                                                type="number"
+                                                value={ans.score}
+                                                onChange={(e) => handleScoreChange(ans.question_number, e.target.value)}
+                                                min="0"
+                                                required
+                                                className="w-16 px-2 py-1 bg-neutral-800 text-neutral-50 rounded-md border border-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
                                         </div>
                                         {correctAnswers.length > 1 && (
                                             <button

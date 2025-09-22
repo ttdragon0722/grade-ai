@@ -33,3 +33,4 @@ class ImageSaver:
         """儲存影像到指定目錄"""
         cv2.imwrite(str(self.save_path), self.im1)
         print(f"✅ 影像已儲存： {self.save_path}")
+        return str(self.save_path)
