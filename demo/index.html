@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神經網路背景動畫</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- 引入 three.js 函式庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // 設定全域變數
+        let scene, camera, renderer, particles;
+        const particleCount = 10000;
+        const lineCount = 10; // 同時顯示的線段數量
+        let mouseX = 0,
+            mouseY = 0;
+        const windowHalfX = window.innerWidth / 2;
+        const windowHalfY = window.innerHeight / 2;
+
+        let linesData = []; // 儲存每條線的狀態 (淡入淡出、端點索引)
+
+        // 攝影機自動移動變數
+        let cameraAutoTarget = new THREE.Vector3();
+        let lastAutoMoveTime = 0;
+        const autoMoveInterval = 7000; // 每7秒移動一次
+
+        // 初始化場景
+        function init() {
+            // 場景
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.0005);
+
+            // 相機
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.z = 250;
+
+            // 渲染器
+            renderer = new THREE.WebGLRenderer({
+                antialias: true
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // 創建粒子 (背景點)
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const color = new THREE.Color();
+
+            for (let i = 0; i < particleCount; i++) {
+                // 隨機生成粒子位置
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                
+                // 初始粒子顏色
+                color.setHSL(0.6, 1.0, 0.5 + Math.random() * 0.5);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 3,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // 創建動態連線的集合
+            for (let i = 0; i < lineCount; i++) {
+                // 每條線都有自己的幾何體和材質
+                const lineGeometry = new THREE.BufferGeometry();
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+                
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0xa0d9f9,
+                    transparent: true,
+                    opacity: 0
+                });
+
+                const line = new THREE.LineSegments(lineGeometry, lineMaterial);
+                scene.add(line);
+
+                // 為每條線初始化狀態，並隨機延遲開始
+                linesData.push({
+                    lineObject: line,
+                    endpoints: { index1: 0, index2: 0 },
+                    currentOpacity: Math.random() * 0.5, // 隨機初始透明度
+                    state: 'FADE_IN',
+                    fadeRate: 0.005 + Math.random() * 0.01, // 隨機淡入淡出速度
+                    maxOpacity: 0.3 + Math.random() * 0.4 // 隨機最大亮度
+                });
+
+                // 立即生成第一組隨機連線
+                generateNewLine(i);
+            }
+
+            // 設置初始的攝影機自動移動目標
+            setNewCameraAutoTarget();
+
+            // 事件監聽
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // 生成一條全新的隨機連線
+        function generateNewLine(lineIndex) {
+            const index1 = Math.floor(Math.random() * particleCount);
+            let index2 = Math.floor(Math.random() * particleCount);
+            while (index2 === index1) {
+                index2 = Math.floor(Math.random() * particleCount);
+            }
+            
+            const lineData = linesData[lineIndex];
+            lineData.endpoints.index1 = index1;
+            lineData.endpoints.index2 = index2;
+            
+            // 重新設定線段的幾何屬性
+            const particlePositions = particles.geometry.attributes.position.array;
+            const linePositions = lineData.lineObject.geometry.attributes.position.array;
+            
+            const pos1 = new THREE.Vector3(particlePositions[index1 * 3], particlePositions[index1 * 3 + 1], particlePositions[index1 * 3 + 2]);
+            const pos2 = new THREE.Vector3(particlePositions[index2 * 3], particlePositions[index2 * 3 + 1], particlePositions[index2 * 3 + 2]);
+
+            linePositions[0] = pos1.x;
+            linePositions[1] = pos1.y;
+            linePositions[2] = pos1.z;
+            linePositions[3] = pos2.x;
+            linePositions[4] = pos2.y;
+            linePositions[5] = pos2.z;
+            
+            lineData.lineObject.geometry.attributes.position.needsUpdate = true;
+
+            // 重新開始透明度動畫
+            lineData.currentOpacity = 0;
+            lineData.state = 'FADE_IN';
+            lineData.fadeRate = 0.005 + Math.random() * 0.01; // 賦予新的隨機速度
+            lineData.maxOpacity = 0.3 + Math.random() * 0.4; // 賦予新的隨機最大亮度
+        }
+        
+        // 設置新的攝影機自動移動目標
+        function setNewCameraAutoTarget() {
+            cameraAutoTarget.set(
+                (Math.random() - 0.5) * 400,
+                (Math.random() - 0.5) * 400,
+                (Math.random() - 0.5) * 400
+            );
+            lastAutoMoveTime = Date.now();
+        }
+
+        // 視窗大小調整
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 滑鼠移動控制相機
+        function onDocumentMouseMove(event) {
+            mouseX = (event.clientX - windowHalfX) * 0.5;
+            mouseY = (event.clientY - windowHalfY) * 0.5;
+        }
+
+        // 主要動畫迴圈
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 檢查是否需要更新攝影機自動移動目標
+            const now = Date.now();
+            if (now - lastAutoMoveTime > autoMoveInterval) {
+                setNewCameraAutoTarget();
+            }
+
+            // 結合滑鼠和自動移動來更新攝影機位置
+            // 攝影機朝著自動目標和滑鼠目標的混合方向移動
+            const combinedTargetX = cameraAutoTarget.x + mouseX;
+            const combinedTargetY = cameraAutoTarget.y + (-mouseY);
+
+            camera.position.x += (combinedTargetX - camera.position.x) * 0.02;
+            camera.position.y += (combinedTargetY - camera.position.y) * 0.02;
+            camera.lookAt(scene.position);
+
+            const particlePositions = particles.geometry.attributes.position.array;
+            const particleColors = particles.geometry.attributes.color.array;
+
+            // 更新粒子顏色 (保持原先的波浪效果)
+            const baseColor = new THREE.Color(0xcccccc);
+            const waveColor = new THREE.Color(0x4a90e2);
+
+            for (let i = 0; i < particleCount; i++) {
+                const z = particlePositions[i * 3 + 2];
+                const waveIntensity = (Math.sin(z * 0.005 + now * 0.002) + 1) / 2;
+                
+                const finalColor = new THREE.Color();
+                finalColor.lerpColors(baseColor, waveColor, waveIntensity);
+
+                particleColors[i * 3] = finalColor.r;
+                particleColors[i * 3 + 1] = finalColor.g;
+                particleColors[i * 3 + 2] = finalColor.b;
+            }
+            particles.geometry.attributes.color.needsUpdate = true;
+            
+            // 更新每條連線的透明度
+            for (let i = 0; i < lineCount; i++) {
+                const lineData = linesData[i];
+
+                if (lineData.state === 'FADE_IN') {
+                    lineData.currentOpacity += lineData.fadeRate;
+                    if (lineData.currentOpacity >= lineData.maxOpacity) {
+                        lineData.state = 'FADE_OUT';
+                    }
+                } else if (lineData.state === 'FADE_OUT') {
+                    lineData.currentOpacity -= lineData.fadeRate;
+                    if (lineData.currentOpacity <= 0) {
+                        generateNewLine(i); // 當線段消失時，生成新的線段
+                    }
+                }
+                lineData.lineObject.material.opacity = lineData.currentOpacity;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>

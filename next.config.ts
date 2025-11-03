@@ -1,19 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  rewrites: async () => {
+	
+	rewrites: async () => {
 		return [
 			{
 				source: "/api/:path*",
-				destination:"http://127.0.0.1:8000/:path*"
+				destination: "http://127.0.0.1:8000/:path*",
 			},
 			{
 				source: "/data/:path*",
-				destination:"http://127.0.0.1:8000/data/:path*"
+				destination: "http://127.0.0.1:8000/data/:path*",
 			},
 			{
 				source: "/photo/:path*",
-				destination:"http://127.0.0.1:8000/photo/:path*"
+				destination: "http://127.0.0.1:8000/photo/:path*",
 			},
 			{
 				source: "/docs",
@@ -32,5 +33,7 @@ const nextConfig: NextConfig = {
 		];
 	},
 };
+
+
 
 export default nextConfig;
