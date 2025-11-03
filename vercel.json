@@ -2,6 +2,5 @@
   "buildCommand": "npm install && npm run build",
   "installCommand": "npm install",
   "outputDirectory": ".next",
-  "framework": "nextjs",
-  "ignoreCommand": "echo 'Ignore Python folders'"
+  "framework": "nextjs"
 }
