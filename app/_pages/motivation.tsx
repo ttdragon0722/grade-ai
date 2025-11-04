@@ -4,7 +4,7 @@ import SectionTitle from "./ui/SectionTitle";
 import WorkHoursChart from "./ui/WorkHoursChart";
 
 const Motivation = () => {
-    return <section id="motivation" className="relative pt-16 bg-white z-10">
+    return <section id="motivation" className="relative bg-white z-10">
         <Container>
             <SectionTitle>研究動機：教師現場的「批改」之痛</SectionTitle>
 
