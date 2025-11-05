@@ -12,7 +12,7 @@ const Information = () => {
     };
 
     return (
-        <div className="relative pt-16 bg-white z-10 text-black">
+        <div id="information" className="relative pt-16 bg-white z-10 text-black">
             <Container>
                 <SectionTitle>專題介紹與技術文件</SectionTitle>
                 <br/>

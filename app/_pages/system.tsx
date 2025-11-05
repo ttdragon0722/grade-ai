@@ -12,9 +12,9 @@ gsap.registerPlugin(ScrollTrigger);
 const steps = [
     { title: "第一步：註冊並登入網站", desc: ["教育工作者登入或註冊帳號"] },
     { title: "第二步：新增班級資料", desc: ["新增班級資料"] },
-    { title: "第三步：新增考卷資料", desc: ["確認預約資訊並送出申請"] },
-    { title: "第四步：上傳學生作答答案", desc: ["系統發送通知至使用者 Line Bot"] },
-    { title: "第五步AI運算並統計分數：", desc: ["完成預約流程"] },
+    { title: "第三步：新增考卷資料", desc: ["新增考卷和正確答案"] },
+    { title: "第四步：上傳學生作答答案", desc: ["拍照或掃描學生作答圖片"] },
+    { title: "第五步AI運算並統計分數：", desc: ["使用ai批改考卷並輸出報表"] },
 ];
 
 const System = () => {
@@ -103,16 +103,10 @@ const System = () => {
                                         <h1 className="font-black text-5xl mb-4 max-md:text-3xl">
                                             {step.title}
                                         </h1>
-                                        <div>
+                                        <div className="text-2xl mb-4 max-md:text-xl">
                                             {step.desc.map((t, j) => (
                                                 <div key={j}>{t}</div>
                                             ))}
-                                        </div>
-                                        <div className="pl-5 max-md:hidden mt-3">
-                                            <ul>
-                                                <li>重點一</li>
-                                                <li>重點二</li>
-                                            </ul>
                                         </div>
                                     </div>
                                 ))}

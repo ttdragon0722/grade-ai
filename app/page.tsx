@@ -17,6 +17,8 @@ import { useEffect, useRef } from "react";
 import DottedHr from "./_pages/ui/DottedHr";
 import System from "./_pages/system";
 import Information from "./_pages/information";
+import Process from "./_pages/process";
+import Footer from "./_pages/footer";
 gsap.registerPlugin(ScrollTrigger);
 
 
@@ -176,14 +178,14 @@ export default function Home() {
           {/* <div className="w-full md:flex justify-end relative md:bottom-[180px] lg:bottom-[280px] ">
             <AnimatedImageHighlights className="md:w-[500px]" autoPlayInterval={8000} imageUrl="/demo.jpg" questionScan={questionScan} answerScan={answerScan} />
           </div> */}
-          <ScrollDownBounce className="absolute bottom-6 left-1/2 right-1/2" />
+          <ScrollDownBounce targetId="information" className="absolute bottom-6 left-1/2 right-1/2" />
         </Container>
       </div>
       <Information />
       <Motivation />
       <System />
-      <Motivation />
-
+      <Process />
+      <Footer year={2025} />
     </>
   );
 }

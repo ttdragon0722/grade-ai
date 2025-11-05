@@ -23,7 +23,6 @@ interface ThreeState {
 
 // 神經網路背景動畫元件
 const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) => {
-    // 使用 useRef 來存取 DOM 元素和 THREE.js 物件
     const mountRef = useRef<HTMLDivElement>(null);
     const threeRef = useRef<ThreeState>({
         scene: null,
@@ -233,7 +232,6 @@ const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) =
             const currentMount = mountRef.current;
             if (!camera || !renderer || !currentMount) return;
 
-            // 調整為根據父容器的實際尺寸來設定 Canvas 大小
             const width = currentMount.clientWidth;
             const height = currentMount.clientHeight;
 
@@ -243,12 +241,20 @@ const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) =
         };
 
         const onDocumentMouseMove = (event: MouseEvent): void => {
-            const currentMount = mountRef.current;
-            if (!currentMount) return;
             const containerWidth = currentMount.clientWidth;
             const containerHeight = currentMount.clientHeight;
             mouseX = (event.clientX - containerWidth / 2) * 0.5;
             mouseY = (event.clientY - containerHeight / 2) * 0.5;
+        };
+
+        // ✅ 手機觸控支援
+        const onDocumentTouchMove = (event: TouchEvent): void => {
+            if (event.touches.length === 0) return;
+            const touch = event.touches[0];
+            const containerWidth = currentMount.clientWidth;
+            const containerHeight = currentMount.clientHeight;
+            mouseX = (touch.clientX - containerWidth / 2) * 0.5;
+            mouseY = (touch.clientY - containerHeight / 2) * 0.5;
         };
 
         init();
@@ -256,6 +262,7 @@ const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) =
 
         window.addEventListener('resize', onWindowResize);
         document.addEventListener('mousemove', onDocumentMouseMove);
+        document.addEventListener('touchmove', onDocumentTouchMove, { passive: false });
 
         // 清理函式
         return () => {
@@ -264,6 +271,7 @@ const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) =
                 cancelAnimationFrame(threeRef.current.animationFrameId);
             }
             document.removeEventListener('mousemove', onDocumentMouseMove);
+            document.removeEventListener('touchmove', onDocumentTouchMove);
             window.removeEventListener('resize', onWindowResize);
             if (currentMount && renderer) {
                 currentMount.removeChild(renderer.domElement);
@@ -275,7 +283,6 @@ const NeuralNetworkBackground = ({ children }: { children?: React.ReactNode }) =
     return (
         <div className='w-full h-full z-0 fixed top-0 left-0'>
             <div ref={mountRef} className="absolute inset-0 z-0" />
-            {/* <div className='absolute inset-0 w-full h-full backdrop-blur-xs ' /> */}
             {children}
         </div>
     );
